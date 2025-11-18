@@ -1,0 +1,11 @@
+flask==2.3.3
+backtrader==1.9.78.123
+pandas>=1.5.0
+numpy>=1.24.0
+matplotlib>=3.7.0
+plotly>=5.15.0
+yfinance>=0.2.0
+python-dateutil>=2.8.0
+werkzeug>=2.3.0
+jinja2>=3.1.0
+watchdog>=2.1.0

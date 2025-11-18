@@ -1,0 +1,925 @@
+{% extends "base.html" %}
+
+{% block title %}Run Backtest - Backtest System{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <h1 class="mb-4">
+            <i class="fas fa-play me-2"></i>Run Backtest
+        </h1>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-8">
+        <!-- Configuration Form -->
+        <div class="card">
+            <div class="card-header">
+                <h5 class="card-title mb-0">
+                    <i class="fas fa-cog me-2"></i>Backtest Configuration
+                </h5>
+            </div>
+            <div class="card-body">
+                <form id="backtest-form">
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label for="start-date" class="form-label">Start Date</label>
+                            <input type="date" class="form-control" id="start-date" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="end-date" class="form-label">End Date</label>
+                            <input type="date" class="form-control" id="end-date" required>
+                        </div>
+                    </div>
+                    
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label for="initial-cash" class="form-label">Initial Cash ($)</label>
+                            <input type="number" class="form-control" id="initial-cash" 
+                                   value="100000" min="1000" step="1000" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="commission" class="form-label">Commission (%)</label>
+                            <input type="number" class="form-control" id="commission" 
+                                   value="0.1" min="0" max="5" step="0.01" required>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Data Source</label>
+                        <select class="form-control" id="data-source">
+                            <option value="yahoo">Yahoo Finance</option>
+                        </select>
+                    </div>
+                </form>
+            </div>
+        </div>
+        
+        <!-- Strategy Selection -->
+        <div class="card mt-4">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="card-title mb-0">
+                    <i class="fas fa-brain me-2"></i>Strategy Selection
+                </h5>
+                <button type="button" class="btn btn-sm btn-outline-primary" onclick="addStrategy()">
+                    <i class="fas fa-plus me-1"></i>Add Strategy
+                </button>
+            </div>
+            <div class="card-body">
+                <div id="strategy-list">
+                    <!-- Dynamic strategy configurations will be added here -->
+                </div>
+            </div>
+        </div>
+        
+        <!-- Run Backtest Button -->
+        <div class="d-grid gap-2 mt-4">
+            <button type="button" class="btn btn-primary btn-lg" onclick="runBacktest()">
+                <i class="fas fa-play me-2"></i>Run Backtest
+                <span id="loading-spinner" class="spinner-border spinner-border-sm ms-2 d-none"></span>
+            </button>
+        </div>
+    </div>
+    
+    <!-- Available Strategies -->
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="card-title mb-0">
+                    <i class="fas fa-list me-2"></i>Available Strategies
+                </h5>
+            </div>
+            <div class="card-body">
+                <div id="available-strategies">
+                    {% for strategy in strategies %}
+                    <div class="strategy-item mb-2 p-2 border rounded cursor-pointer" 
+                         onclick="selectStrategy('{{ strategy }}')">
+                        <strong>{{ strategy }}</strong>
+                        <small class="text-muted d-block">Click to add to backtest</small>
+                    </div>
+                    {% endfor %}
+                    
+                    {% if not strategies %}
+                    <p class="text-muted">No strategies available. 
+                       <a href="{{ url_for('main.strategies') }}">Upload strategies</a> to get started.
+                    </p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        
+        <!-- Quick Presets -->
+        <div class="card mt-3">
+            <div class="card-header">
+                <h5 class="card-title mb-0">
+                    <i class="fas fa-magic me-2"></i>Quick Presets
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="d-grid gap-2">
+                    <button class="btn btn-outline-secondary btn-sm" onclick="setPreset('1year')">
+                        Last 1 Year
+                    </button>
+                    <button class="btn btn-outline-secondary btn-sm" onclick="setPreset('2years')">
+                        Last 2 Years
+                    </button>
+                    <button class="btn btn-outline-secondary btn-sm" onclick="setPreset('5years')">
+                        Last 5 Years
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Results Modal -->
+<div class="modal fade" id="results-modal" tabindex="-1">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="fas fa-chart-bar me-2"></i>Backtest Results
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="results-content">
+                    <!-- Results will be loaded here -->
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let strategiesData = [];
+let selectedStrategies = [];
+
+// Initialize page
+document.addEventListener('DOMContentLoaded', function() {
+    setDefaultDates();
+    loadStrategiesInfo();
+});
+
+function setDefaultDates() {
+    const endDate = new Date();
+    const startDate = new Date();
+    startDate.setFullYear(endDate.getFullYear() - 1);
+    
+    document.getElementById('end-date').value = endDate.toISOString().split('T')[0];
+    document.getElementById('start-date').value = startDate.toISOString().split('T')[0];
+}
+
+function setPreset(period) {
+    const endDate = new Date();
+    const startDate = new Date();
+    
+    switch(period) {
+        case '1year':
+            startDate.setFullYear(endDate.getFullYear() - 1);
+            break;
+        case '2years':
+            startDate.setFullYear(endDate.getFullYear() - 2);
+            break;
+        case '5years':
+            startDate.setFullYear(endDate.getFullYear() - 5);
+            break;
+    }
+    
+    document.getElementById('end-date').value = endDate.toISOString().split('T')[0];
+    document.getElementById('start-date').value = startDate.toISOString().split('T')[0];
+}
+
+function loadStrategiesInfo() {
+    // Load detailed strategy information
+    const strategies = {{ strategies | tojson }};
+    
+    strategies.forEach(strategy => {
+        fetch(`/api/strategies/${strategy}`)
+            .then(response => response.json())
+            .then(data => {
+                strategiesData[strategy] = data;
+            })
+            .catch(error => {
+                console.error('Error loading strategy info:', error);
+            });
+    });
+}
+
+function selectStrategy(strategyName) {
+    addStrategy(strategyName);
+}
+
+function addStrategy(strategyName = null) {
+    const strategyContainer = document.getElementById('strategy-list');
+    const strategyId = 'strategy-' + Date.now();
+    
+    const availableStrategies = {{ strategies | tojson }};
+    
+    const strategyHtml = `
+        <div class="strategy-config card mb-3" id="${strategyId}">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h6 class="mb-0">Strategy Configuration</h6>
+                <button type="button" class="btn btn-sm btn-outline-danger" onclick="removeStrategy('${strategyId}')">
+                    <i class="fas fa-trash"></i>
+                </button>
+            </div>
+            <div class="card-body">
+                <div class="row mb-3">
+                    <div class="col-md-4">
+                        <label class="form-label">Strategy Module</label>
+                        <select class="form-control strategy-module" onchange="updateStrategyClasses('${strategyId}')">
+                            <option value="">Select strategy...</option>
+                            ${availableStrategies.map(s => `<option value="${s}" ${s === strategyName ? 'selected' : ''}>${s}</option>`).join('')}
+                        </select>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Strategy Class</label>
+                        <select class="form-control strategy-class">
+                            <option value="">Select class...</option>
+                        </select>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Symbol</label>
+                        <select class="form-control strategy-symbol">
+                            <option value="">Loading symbols...</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="parameters-section">
+                    <!-- Parameters will be dynamically added here -->
+                </div>
+                <hr>
+                <div class="filters-section">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h6 class="mb-0">
+                            <i class="fas fa-filter me-2"></i>Data Filters 
+                            <small class="text-muted">(Optional)</small>
+                        </h6>
+                        <button type="button" class="btn btn-sm btn-outline-primary" onclick="addFilter('${strategyId}')">
+                            <i class="fas fa-plus me-1"></i>Add Filter
+                        </button>
+                    </div>
+                    <div class="filters-list">
+                        <!-- Filters will be dynamically added here -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    strategyContainer.insertAdjacentHTML('beforeend', strategyHtml);
+    
+    // Populate symbol dropdown
+    const symbolSelect = document.querySelector(`#${strategyId} .strategy-symbol`);
+    populateSymbolDropdown(symbolSelect, availableSymbols);
+    
+    if (strategyName) {
+        updateStrategyClasses(strategyId);
+    }
+}
+
+function removeStrategy(strategyId) {
+    document.getElementById(strategyId).remove();
+}
+
+function updateStrategyClasses(strategyId) {
+    const strategyElement = document.getElementById(strategyId);
+    const moduleSelect = strategyElement.querySelector('.strategy-module');
+    const classSelect = strategyElement.querySelector('.strategy-class');
+    const parametersSection = strategyElement.querySelector('.parameters-section');
+    
+    const selectedModule = moduleSelect.value;
+    
+    // Clear existing options
+    classSelect.innerHTML = '<option value="">Select class...</option>';
+    parametersSection.innerHTML = '';
+    
+    if (selectedModule && strategiesData[selectedModule]) {
+        const strategies = strategiesData[selectedModule];
+        
+        Object.keys(strategies).forEach(className => {
+            const option = document.createElement('option');
+            option.value = className;
+            option.textContent = className;
+            classSelect.appendChild(option);
+        });
+        
+        // Auto-select first class if only one available
+        if (Object.keys(strategies).length === 1) {
+            classSelect.value = Object.keys(strategies)[0];
+            updateStrategyParameters(strategyId);
+        }
+    }
+}
+
+function updateStrategyParameters(strategyId) {
+    const strategyElement = document.getElementById(strategyId);
+    const moduleSelect = strategyElement.querySelector('.strategy-module');
+    const classSelect = strategyElement.querySelector('.strategy-class');
+    const parametersSection = strategyElement.querySelector('.parameters-section');
+    
+    const selectedModule = moduleSelect.value;
+    const selectedClass = classSelect.value;
+    
+    if (selectedModule && selectedClass && strategiesData[selectedModule]) {
+        const strategy = strategiesData[selectedModule][selectedClass];
+        const parameters = strategy.parameters || {};
+        
+        if (Object.keys(parameters).length > 0) {
+            let parametersHtml = '<h6>Parameters</h6><div class="row">';
+            
+            Object.entries(parameters).forEach(([paramName, defaultValue]) => {
+                parametersHtml += `
+                    <div class="col-md-6 mb-2">
+                        <label class="form-label">${paramName}</label>
+                        <input type="text" class="form-control parameter-input" 
+                               data-param="${paramName}" value="${defaultValue}">
+                    </div>
+                `;
+            });
+            
+            parametersHtml += '</div>';
+            parametersSection.innerHTML = parametersHtml;
+        }
+    }
+}
+
+// Add event listener for strategy class changes
+document.addEventListener('change', function(e) {
+    if (e.target.classList.contains('strategy-class')) {
+        const strategyId = e.target.closest('.strategy-config').id;
+        updateStrategyParameters(strategyId);
+    }
+});
+
+// Simple symbol loading for strategy dropdowns
+async function loadSymbolsForDropdowns() {
+    try {
+        const response = await fetch('/api/symbols');
+        const data = await response.json();
+        
+        if (data.success) {
+            return data.symbols;
+        } else {
+            console.error('Failed to load symbols:', data.error);
+            return ['AAPL', 'MSFT', 'ETH-USD']; // Fallback
+        }
+    } catch (error) {
+        console.error('Error loading symbols:', error);
+        return ['AAPL', 'MSFT', 'ETH-USD']; // Fallback
+    }
+}
+
+function populateSymbolDropdown(selectElement, symbols) {
+    selectElement.innerHTML = '';
+    symbols.forEach(symbol => {
+        const option = document.createElement('option');
+        option.value = symbol;
+        option.textContent = symbol;
+        selectElement.appendChild(option);
+    });
+}
+
+// Load symbols when page loads
+let availableSymbols = [];
+document.addEventListener('DOMContentLoaded', async function() {
+    availableSymbols = await loadSymbolsForDropdowns();
+});
+
+function runBacktest() {
+    const loadingSpinner = document.getElementById('loading-spinner');
+    const runButton = document.querySelector('button[onclick="runBacktest()"]');
+    
+    // Collect configuration
+    const config = {
+        start_date: document.getElementById('start-date').value,
+        end_date: document.getElementById('end-date').value,
+        initial_cash: parseFloat(document.getElementById('initial-cash').value),
+        commission: parseFloat(document.getElementById('commission').value) / 100,
+        data_source: document.getElementById('data-source').value,
+
+    };
+    
+    // Collect strategy configurations
+    const strategyConfigs = [];
+    document.querySelectorAll('.strategy-config').forEach(strategyElement => {
+        const moduleSelect = strategyElement.querySelector('.strategy-module');
+        const classSelect = strategyElement.querySelector('.strategy-class');
+        const symbolSelect = strategyElement.querySelector('.strategy-symbol');
+        const parameterInputs = strategyElement.querySelectorAll('.parameter-input');
+        
+        if (moduleSelect.value && classSelect.value && symbolSelect.value) {
+            const parameters = {};
+            parameterInputs.forEach(input => {
+                const paramName = input.dataset.param;
+                let value = input.value;
+                
+                // Try to parse as number if it looks like one
+                if (!isNaN(value) && value !== '') {
+                    value = parseFloat(value);
+                }
+                
+                parameters[paramName] = value;
+            });
+            
+            // Collect filters for this strategy
+            const filters = getFiltersForStrategy(strategyElement.id);
+            
+            strategyConfigs.push({
+                name: `${classSelect.value}_${symbolSelect.value}`,
+                module_name: moduleSelect.value,
+                class_name: classSelect.value,
+                symbol: symbolSelect.value,
+                parameters: parameters,
+                description: '',
+                filters: filters
+            });
+        }
+    });
+    
+    if (strategyConfigs.length === 0) {
+        alert('Please add at least one strategy configuration.');
+        return;
+    }
+    
+    // Show loading state
+    loadingSpinner.classList.remove('d-none');
+    runButton.disabled = true;
+    
+    // Send request
+    fetch('/api/run-backtest', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            config: config,
+            strategies: strategyConfigs
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        loadingSpinner.classList.add('d-none');
+        runButton.disabled = false;
+        
+        if (data.success) {
+            displayResults(data.results, data.comparison);
+        } else {
+            alert('Error running backtest: ' + data.error);
+        }
+    })
+    .catch(error => {
+        loadingSpinner.classList.add('d-none');
+        runButton.disabled = false;
+        alert('Error running backtest: ' + error.message);
+    });
+}
+
+function displayResults(results, comparison) {
+    const modal = new bootstrap.Modal(document.getElementById('results-modal'));
+    const resultsContent = document.getElementById('results-content');
+    
+    // Create tabbed interface
+    let html = `
+        <!-- Tab Navigation -->
+        <ul class="nav nav-tabs mb-4" id="results-tabs" role="tablist">
+            <li class="nav-item" role="presentation">
+                <button class="nav-link active" id="summary-tab" data-bs-toggle="tab" data-bs-target="#summary" type="button" role="tab">
+                    <i class="fas fa-chart-bar me-1"></i>Summary
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="charts-tab" data-bs-toggle="tab" data-bs-target="#charts" type="button" role="tab">
+                    <i class="fas fa-chart-line me-1"></i>Charts
+                </button>
+            </li>
+    `;
+    
+    // Add tab for each strategy's trade history
+    if (results && results.length > 0) {
+        results.forEach((result, index) => {
+            html += `
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="trades-${index}-tab" data-bs-toggle="tab" data-bs-target="#trades-${index}" type="button" role="tab">
+                        <i class="fas fa-list me-1"></i>${result.strategy_name} Trades
+                    </button>
+                </li>
+            `;
+        });
+    }
+    
+    html += `
+        </ul>
+
+        <!-- Tab Content -->
+        <div class="tab-content" id="results-tab-content">
+            <!-- Summary Tab -->
+            <div class="tab-pane fade show active" id="summary" role="tabpanel" aria-labelledby="summary-tab">
+    `;
+    
+    // Summary table
+    if (comparison.summary && comparison.summary.length > 0) {
+        html += `
+            <h5>Strategy Comparison</h5>
+            <div class="table-responsive mb-4">
+                <table class="table table-striped">
+                    <thead>
+                        <tr>
+                            <th>Strategy</th>
+                            <th>Total Return</th>
+                            <th>Sharpe Ratio</th>
+                            <th>Max Drawdown</th>
+                            <th>Trades</th>
+                            <th>Win Rate</th>
+                            <th>Profit Factor</th>
+                            <th>Final Value</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+        `;
+        
+        comparison.summary.forEach(row => {
+            html += `
+                <tr>
+                    <td><strong>${row.strategy}</strong></td>
+                    <td class="${parseFloat(row.total_return) >= 0 ? 'text-success' : 'text-danger'}">${row.total_return}</td>
+                    <td>${row.sharpe_ratio}</td>
+                    <td class="text-danger">${row.max_drawdown}</td>
+                    <td>${row.num_trades}</td>
+                    <td>${row.win_rate}</td>
+                    <td>${typeof row.profit_factor === 'number' ? row.profit_factor.toFixed(2) : parseFloat(row.profit_factor).toFixed(2)}</td>
+                    <td>${row.final_value}</td>
+                </tr>
+            `;
+        });
+        
+        html += '</tbody></table></div>';
+    }
+    
+    html += `
+            </div>
+
+            <!-- Charts Tab -->
+            <div class="tab-pane fade" id="charts" role="tabpanel" aria-labelledby="charts-tab">
+                <h5>Equity Curves Comparison</h5>
+                <div id="equity-chart" style="height: 400px;"></div>
+            </div>
+    `;
+    
+    // Add trade history tabs for each strategy
+    if (results && results.length > 0) {
+        results.forEach((result, index) => {
+            html += `
+                <div class="tab-pane fade" id="trades-${index}" role="tabpanel" aria-labelledby="trades-${index}-tab">
+                    <div id="trade-history-${index}">
+                        <!-- Trade history for ${result.strategy_name} will be loaded here -->
+                    </div>
+                </div>
+            `;
+        });
+    }
+    
+    html += `
+        </div>
+    `;
+    
+    resultsContent.innerHTML = html;
+    
+    // Add event listeners for tab switching
+    document.addEventListener('shown.bs.tab', function (event) {
+        if (event.target.id === 'charts-tab') {
+            // Load equity curves chart when charts tab is shown
+            loadEquityCurvesChart();
+        } else if (event.target.id.startsWith('trades-')) {
+            // Load trade history when any trade tab is shown
+            const index = parseInt(event.target.id.split('-')[1]);
+            const result = results[index];
+            createTradeHistoryTable(`trade-history-${index}`, result.trades || [], result.strategy_name);
+        }
+    });
+    
+
+    function loadEquityCurvesChart() {
+        if (comparison.equity_curves) {
+            const traces = [];
+            
+            // Add equity curve lines
+            Object.entries(comparison.equity_curves).forEach(([strategyName, equityCurve]) => {
+                const dates = equityCurve.map(point => point.date);
+                const values = equityCurve.map(point => point.value);
+                
+                traces.push({
+                    x: dates,
+                    y: values,
+                    type: 'scatter',
+                    mode: 'lines',
+                    name: strategyName,
+                    line: { width: 2 }
+                });
+            });
+            
+            // Add trade markers
+            results.forEach((result, resultIndex) => {
+                if (result.trades && result.trades.length > 0) {
+                    // Get corresponding equity curve for price interpolation
+                    const equityCurve = comparison.equity_curves[result.strategy_name];
+                    
+                    // Separate entry and exit trades
+                    const entryTrades = [];
+                    const exitTrades = [];
+                    
+                    result.trades.forEach(trade => {
+                        // Find portfolio value at trade dates by interpolating equity curve
+                        const initialCash = parseFloat(document.getElementById('initial-cash').value) || 100000;
+                        const entryValue = getPortfolioValueAtDate(equityCurve, trade.entry_date, initialCash);
+                        const exitValue = getPortfolioValueAtDate(equityCurve, trade.exit_date, initialCash);
+                        
+                        entryTrades.push({
+                            x: trade.entry_date,
+                            y: entryValue,
+                            text: `BUY ${trade.symbol}<br>Date: ${new Date(trade.entry_date).toLocaleString()}<br>Price: $${trade.entry_price.toFixed(2)}<br>Size: ${trade.size}`,
+                            tradeId: trade.trade_id
+                        });
+                        
+                        exitTrades.push({
+                            x: trade.exit_date,
+                            y: exitValue,
+                            text: `SELL ${trade.symbol}<br>Date: ${new Date(trade.exit_date).toLocaleString()}<br>Price: $${trade.exit_price.toFixed(2)}<br>P&L: $${trade.pnl.toFixed(2)} (${trade.pnl_percent.toFixed(2)}%)`,
+                            tradeId: trade.trade_id
+                        });
+                    });
+                    
+                    // Add entry markers (green triangles pointing up)
+                    if (entryTrades.length > 0) {
+                        traces.push({
+                            x: entryTrades.map(t => t.x),
+                            y: entryTrades.map(t => t.y),
+                            type: 'scatter',
+                            mode: 'markers',
+                            name: `${result.strategy_name} - Buy Orders`,
+                            marker: {
+                                symbol: 'triangle-up',
+                                size: 12,
+                                color: 'green',
+                                line: { width: 2, color: 'darkgreen' }
+                            },
+                            text: entryTrades.map(t => t.text),
+                            hovertemplate: '%{text}<extra></extra>',
+                            showlegend: true
+                        });
+                    }
+                    
+                    // Add exit markers (red triangles pointing down)
+                    if (exitTrades.length > 0) {
+                        traces.push({
+                            x: exitTrades.map(t => t.x),
+                            y: exitTrades.map(t => t.y),
+                            type: 'scatter',
+                            mode: 'markers',
+                            name: `${result.strategy_name} - Sell Orders`,
+                            marker: {
+                                symbol: 'triangle-down',
+                                size: 12,
+                                color: 'red',
+                                line: { width: 2, color: 'darkred' }
+                            },
+                            text: exitTrades.map(t => t.text),
+                            hovertemplate: '%{text}<extra></extra>',
+                            showlegend: true
+                        });
+                    }
+                }
+            });
+            
+            const layout = {
+                title: 'Strategy Performance with Trade Markers',
+                xaxis: { title: 'Date' },
+                yaxis: { 
+                    title: 'Total Capital ($)',
+                    tickformat: ',.0f'
+                },
+                hovermode: 'closest',
+                margin: { t: 40, r: 40, b: 40, l: 60 },
+                legend: {
+                    orientation: 'h',
+                    y: -0.2
+                }
+            };
+            
+            Plotly.newPlot('equity-chart', traces, layout, {responsive: true});
+        } else {
+            document.getElementById('equity-chart').innerHTML = `
+                <div class="text-center py-5">
+                    <i class="fas fa-chart-line fa-3x text-muted mb-3"></i>
+                    <h6 class="text-muted">No Chart Data Available</h6>
+                    <p class="text-muted small">Equity curve data was not collected for this backtest.</p>
+                </div>
+            `;
+        }
+    }
+    
+    modal.show();
+}
+
+// Filter Management Functions
+function addFilter(strategyId) {
+    const filtersContainer = document.querySelector(`#${strategyId} .filters-list`);
+    const filterId = 'filter-' + Date.now();
+    
+    const filterHtml = `
+        <div class="filter-config card mb-2" id="${filterId}">
+            <div class="card-body py-2">
+                <div class="row align-items-center">
+                    <div class="col-md-2">
+                        <select class="form-control form-control-sm filter-type" onchange="updateFilterOptions('${filterId}')">
+                            <option value="">Filter Type</option>
+                            <option value="volume">Volume</option>
+                            <option value="price">Price</option>
+                            <option value="technical">Technical</option>
+                            <option value="datetime">Date/Time</option>
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <select class="form-control form-control-sm filter-operator">
+                            <option value="">Operator</option>
+                            <option value=">">Greater than</option>
+                            <option value="<">Less than</option>
+                            <option value=">=">Greater or equal</option>
+                            <option value="<=">Less or equal</option>
+                            <option value="==">Equal to</option>
+                            <option value="!=">Not equal</option>
+                            <option value="between">Between</option>
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <select class="form-control form-control-sm filter-technical-indicator" style="display: none;">
+                            <option value="">Indicator</option>
+                            <option value="sma">Simple Moving Average (SMA)</option>
+                            <option value="ema">Exponential Moving Average (EMA)</option>
+                            <option value="rsi">Relative Strength Index (RSI)</option>
+                            <option value="macd">MACD</option>
+                            <option value="bb_upper">Bollinger Bands Upper</option>
+                            <option value="bb_lower">Bollinger Bands Lower</option>
+                            <option value="bb_middle">Bollinger Bands Middle</option>
+                            <option value="stoch_k">Stochastic %K</option>
+                            <option value="stoch_d">Stochastic %D</option>
+                            <option value="atr">Average True Range (ATR)</option>
+                            <option value="adx">Average Directional Index (ADX)</option>
+                        </select>
+                        <input type="text" class="form-control form-control-sm filter-value" placeholder="Value">
+                    </div>
+                    <div class="col-md-3">
+                        <input type="text" class="form-control form-control-sm filter-parameter" placeholder="Parameter (optional)">
+                    </div>
+                    <div class="col-md-1">
+                        <div class="form-check">
+                            <input class="form-check-input filter-enabled" type="checkbox" checked>
+                        </div>
+                    </div>
+                    <div class="col-md-1">
+                        <button type="button" class="btn btn-sm btn-outline-danger" onclick="removeFilter('${filterId}')">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </div>
+                </div>
+                <div class="row mt-2">
+                    <div class="col-12">
+                        <small class="text-muted filter-description">Select a filter type to see available options</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    filtersContainer.insertAdjacentHTML('beforeend', filterHtml);
+}
+
+function removeFilter(filterId) {
+    document.getElementById(filterId).remove();
+}
+
+function updateFilterOptions(filterId) {
+    const filterElement = document.getElementById(filterId);
+    const filterType = filterElement.querySelector('.filter-type').value;
+    const descriptionElement = filterElement.querySelector('.filter-description');
+    const parameterInput = filterElement.querySelector('.filter-parameter');
+    const technicalIndicatorSelect = filterElement.querySelector('.filter-technical-indicator');
+    const valueInput = filterElement.querySelector('.filter-value');
+    
+    // Hide all special inputs initially
+    technicalIndicatorSelect.style.display = 'none';
+    valueInput.placeholder = 'Value';
+    
+    // Update descriptions and parameter placeholder based on filter type
+    switch(filterType) {
+        case 'volume':
+            descriptionElement.textContent = 'Filter by daily trading volume (e.g., > 1000000 for volume above 1M)';
+            parameterInput.placeholder = 'Not used';
+            parameterInput.disabled = true;
+            break;
+        case 'price':
+            descriptionElement.textContent = 'Filter by price levels (e.g., close > 50, high < 200)';
+            parameterInput.placeholder = 'price type (open/high/low/close)';
+            parameterInput.disabled = false;
+            break;
+        case 'technical':
+            descriptionElement.textContent = 'Filter by technical indicators. For moving averages: compare price vs indicator. For oscillators: compare indicator vs threshold.';
+            parameterInput.placeholder = 'indicator period (e.g., 14, 20)';
+            parameterInput.disabled = false;
+            technicalIndicatorSelect.style.display = 'block';
+            valueInput.placeholder = 'Threshold or comparison (e.g., 70 for RSI, "sma" for price>SMA)';
+            
+            // Update placeholder based on selected indicator
+            technicalIndicatorSelect.onchange = function() {
+                const indicator = this.value;
+                if (['sma', 'ema', 'bb_middle', 'bb_upper', 'bb_lower'].includes(indicator)) {
+                    valueInput.placeholder = 'Not used (compares price vs indicator)';
+                    valueInput.disabled = true;
+                } else {
+                    valueInput.placeholder = 'Threshold value (e.g., 70 for RSI, 0.5 for MACD)';
+                    valueInput.disabled = false;
+                }
+            };
+            break;
+        case 'datetime':
+            descriptionElement.textContent = 'Filter by date/time conditions (e.g., exclude weekends, trading hours)';
+            parameterInput.placeholder = 'condition type';
+            parameterInput.disabled = false;
+            break;
+        default:
+            descriptionElement.textContent = 'Select a filter type to see available options';
+            parameterInput.placeholder = 'Parameter (optional)';
+            parameterInput.disabled = false;
+    }
+}
+
+function getFiltersForStrategy(strategyId) {
+    const filters = [];
+    const filterElements = document.querySelectorAll(`#${strategyId} .filter-config`);
+    
+    filterElements.forEach(filterElement => {
+        const filterType = filterElement.querySelector('.filter-type').value;
+        const operator = filterElement.querySelector('.filter-operator').value;
+        const value = filterElement.querySelector('.filter-value').value;
+        const parameter = filterElement.querySelector('.filter-parameter').value;
+        const enabled = filterElement.querySelector('.filter-enabled').checked;
+        
+        if (filterType && operator) {
+            // For moving averages and BB bands, value is not required
+            const indicatorSelect = filterElement.querySelector('.filter-technical-indicator');
+            const isMovingAverage = indicatorSelect && ['sma', 'ema', 'bb_middle', 'bb_upper', 'bb_lower'].includes(indicatorSelect.value);
+            
+            if (filterType === 'technical' && isMovingAverage) {
+                // For moving averages, value is not used but we need to provide a default
+                let filterData = {
+                    filter_type: filterType,
+                    operator: operator,
+                    value: 0, // Default value for moving averages (not used)
+                    parameter: parameter,
+                    enabled: enabled,
+                    indicator: indicatorSelect.value
+                };
+                filters.push(filterData);
+            } else if (value) {
+                // For other filters, value is required
+                let filterData = {
+                    filter_type: filterType,
+                    operator: operator,
+                    value: value,
+                    parameter: parameter,
+                    enabled: enabled
+                };
+                
+                // For technical filters, include the indicator type
+                if (filterType === 'technical' && indicatorSelect && indicatorSelect.value) {
+                    filterData.indicator = indicatorSelect.value;
+                }
+                
+                filters.push(filterData);
+            }
+        }
+    });
+    
+    return filters;
+}
+</script>
+
+<style>
+.strategy-item {
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.strategy-item:hover {
+    background-color: #f8f9fa;
+}
+
+.cursor-pointer {
+    cursor: pointer;
+}
+</style>
+{% endblock %}

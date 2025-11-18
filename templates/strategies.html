@@ -1,0 +1,391 @@
+{% extends "base.html" %}
+
+{% block title %}Strategies - Backtest System{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <h1 class="mb-4">
+            <i class="fas fa-brain me-2"></i>Strategy Management
+        </h1>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-8">
+        <!-- Available Strategies -->
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="card-title mb-0">
+                    <i class="fas fa-list me-2"></i>Available Strategies
+                </h5>
+                <button type="button" class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#upload-modal">
+                    <i class="fas fa-upload me-1"></i>Upload Strategy
+                </button>
+            </div>
+            <div class="card-body">
+                <div id="strategies-list">
+                    {% for strategy in strategies %}
+                    <div class="strategy-card card mb-3" data-strategy="{{ strategy }}">
+                        <div class="card-body">
+                            <div class="d-flex justify-content-between align-items-start">
+                                <div>
+                                    <h6 class="card-title">{{ strategy }}</h6>
+                                    <p class="card-text text-muted" id="desc-{{ strategy }}">Loading...</p>
+                                    <small class="text-muted" id="params-{{ strategy }}"></small>
+                                </div>
+                                <div class="btn-group">
+                                    <button type="button" class="btn btn-sm btn-outline-info" 
+                                            onclick="viewStrategy('{{ strategy }}')">
+                                        <i class="fas fa-eye"></i>
+                                    </button>
+                                    <button type="button" class="btn btn-sm btn-outline-primary" 
+                                            onclick="useStrategy('{{ strategy }}')">
+                                        <i class="fas fa-play"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                    
+                    {% if not strategies %}
+                    <div class="text-center py-5">
+                        <i class="fas fa-brain fa-3x text-muted mb-3"></i>
+                        <h5 class="text-muted">No Strategies Available</h5>
+                        <p class="text-muted">Upload your first strategy to get started!</p>
+                        <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#upload-modal">
+                            <i class="fas fa-upload me-2"></i>Upload Strategy
+                        </button>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-4">
+        <!-- Strategy Template -->
+        <div class="card">
+            <div class="card-header">
+                <h5 class="card-title mb-0">
+                    <i class="fas fa-code me-2"></i>Strategy Template
+                </h5>
+            </div>
+            <div class="card-body">
+                <p class="text-muted">Use this template to create your own strategies:</p>
+                <button type="button" class="btn btn-outline-primary w-100 mb-3" onclick="showTemplate()">
+                    <i class="fas fa-download me-2"></i>Download Template
+                </button>
+                
+                <h6>Requirements:</h6>
+                <ul class="small">
+                    <li>Inherit from <code>bt.Strategy</code></li>
+                    <li>Implement <code>__init__</code> and <code>next</code> methods</li>
+                    <li>Use <code>self.buy()</code> and <code>self.sell()</code> for trading</li>
+                    <li>Define parameters using <code>params</code> tuple</li>
+                </ul>
+            </div>
+        </div>
+        
+        <!-- Example Strategies -->
+        <div class="card mt-3">
+            <div class="card-header">
+                <h5 class="card-title mb-0">
+                    <i class="fas fa-lightbulb me-2"></i>Example Strategies
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="d-grid gap-2">
+                    <button type="button" class="btn btn-outline-secondary btn-sm" onclick="downloadExample('sma_crossover')">
+                        SMA Crossover
+                    </button>
+                    <button type="button" class="btn btn-outline-secondary btn-sm" onclick="downloadExample('rsi_strategy')">
+                        RSI Strategy
+                    </button>
+                    <button type="button" class="btn btn-outline-secondary btn-sm" onclick="downloadExample('bollinger_bands')">
+                        Bollinger Bands
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Upload Modal -->
+<div class="modal fade" id="upload-modal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="fas fa-upload me-2"></i>Upload Strategy
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="upload-form" enctype="multipart/form-data">
+                    <div class="mb-3">
+                        <label for="strategy-file" class="form-label">Strategy File (.py)</label>
+                        <input type="file" class="form-control" id="strategy-file" accept=".py" required>
+                        <div class="form-text">Select a Python file containing your strategy class</div>
+                    </div>
+                    
+                    <div class="alert alert-info">
+                        <i class="fas fa-info-circle me-2"></i>
+                        Make sure your strategy inherits from <code>bt.Strategy</code> and follows the required structure.
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="uploadStrategy()">
+                    <i class="fas fa-upload me-2"></i>Upload
+                    <span id="upload-spinner" class="spinner-border spinner-border-sm ms-2 d-none"></span>
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Strategy View Modal -->
+<div class="modal fade" id="view-modal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="view-modal-title">
+                    <i class="fas fa-eye me-2"></i>Strategy Details
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="strategy-details">
+                    <!-- Strategy details will be loaded here -->
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Load strategy details on page load
+document.addEventListener('DOMContentLoaded', function() {
+    loadAllStrategyDetails();
+});
+
+function loadAllStrategyDetails() {
+    const strategies = {{ strategies | tojson }};
+    
+    strategies.forEach(strategy => {
+        fetch(`/api/strategies/${strategy}`)
+            .then(response => response.json())
+            .then(data => {
+                updateStrategyCard(strategy, data);
+            })
+            .catch(error => {
+                console.error('Error loading strategy details:', error);
+                document.getElementById(`desc-${strategy}`).textContent = 'Error loading details';
+            });
+    });
+}
+
+function updateStrategyCard(strategyName, data) {
+    const descElement = document.getElementById(`desc-${strategyName}`);
+    const paramsElement = document.getElementById(`params-${strategyName}`);
+    
+    if (Object.keys(data).length > 0) {
+        const firstStrategy = Object.values(data)[0];
+        descElement.textContent = firstStrategy.description || 'No description available';
+        
+        const paramCount = Object.keys(firstStrategy.parameters || {}).length;
+        paramsElement.textContent = `${paramCount} parameter(s)`;
+    } else {
+        descElement.textContent = 'No strategy classes found';
+    }
+}
+
+function uploadStrategy() {
+    const fileInput = document.getElementById('strategy-file');
+    const uploadSpinner = document.getElementById('upload-spinner');
+    const uploadButton = document.querySelector('button[onclick="uploadStrategy()"]');
+    
+    if (!fileInput.files[0]) {
+        alert('Please select a file to upload');
+        return;
+    }
+    
+    const formData = new FormData();
+    formData.append('file', fileInput.files[0]);
+    
+    uploadSpinner.classList.remove('d-none');
+    uploadButton.disabled = true;
+    
+    fetch('/api/upload-strategy', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        uploadSpinner.classList.add('d-none');
+        uploadButton.disabled = false;
+        
+        if (data.success) {
+            alert(data.message);
+            location.reload(); // Reload page to show new strategy
+        } else {
+            alert('Error uploading strategy: ' + data.error);
+        }
+    })
+    .catch(error => {
+        uploadSpinner.classList.add('d-none');
+        uploadButton.disabled = false;
+        alert('Error uploading strategy: ' + error.message);
+    });
+}
+
+function viewStrategy(strategyName) {
+    fetch(`/api/strategies/${strategyName}`)
+        .then(response => response.json())
+        .then(data => {
+            displayStrategyDetails(strategyName, data);
+        })
+        .catch(error => {
+            alert('Error loading strategy details: ' + error.message);
+        });
+}
+
+function displayStrategyDetails(strategyName, data) {
+    const modal = new bootstrap.Modal(document.getElementById('view-modal'));
+    const modalTitle = document.getElementById('view-modal-title');
+    const detailsContainer = document.getElementById('strategy-details');
+    
+    modalTitle.innerHTML = `<i class="fas fa-eye me-2"></i>${strategyName} Details`;
+    
+    let html = '';
+    
+    if (Object.keys(data).length === 0) {
+        html = '<p class="text-muted">No strategy classes found in this file.</p>';
+    } else {
+        Object.entries(data).forEach(([className, strategy]) => {
+            html += `
+                <div class="card mb-3">
+                    <div class="card-header">
+                        <h6 class="mb-0">${className}</h6>
+                    </div>
+                    <div class="card-body">
+                        <p class="card-text">${strategy.description}</p>
+                        
+                        <h6>Parameters:</h6>
+                        <div class="table-responsive">
+                            <table class="table table-sm">
+                                <thead>
+                                    <tr>
+                                        <th>Parameter</th>
+                                        <th>Default Value</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+            `;
+            
+            if (Object.keys(strategy.parameters).length > 0) {
+                Object.entries(strategy.parameters).forEach(([param, value]) => {
+                    html += `
+                        <tr>
+                            <td><code>${param}</code></td>
+                            <td>${value}</td>
+                        </tr>
+                    `;
+                });
+            } else {
+                html += '<tr><td colspan="2" class="text-muted">No parameters defined</td></tr>';
+            }
+            
+            html += `
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            `;
+        });
+    }
+    
+    detailsContainer.innerHTML = html;
+    modal.show();
+}
+
+function useStrategy(strategyName) {
+    // Redirect to backtest page with this strategy pre-selected
+    window.location.href = `/backtest?strategy=${strategyName}`;
+}
+
+function showTemplate() {
+    const template = `import backtrader as bt
+
+class MyStrategy(bt.Strategy):
+    \"\"\"
+    A sample trading strategy template.
+    
+    This strategy demonstrates the basic structure needed for a Backtrader strategy.
+    \"\"\"
+    
+    params = (
+        ('period', 20),  # Moving average period
+        ('stake', 1),    # Number of shares to trade
+    )
+    
+    def __init__(self):
+        \"\"\"Initialize the strategy with indicators.\"\"\"
+        # Add indicators
+        self.sma = bt.indicators.SimpleMovingAverage(
+            self.datas[0], period=self.params.period
+        )
+        
+        # Create signals
+        self.crossover = bt.indicators.CrossOver(self.datas[0].close, self.sma)
+    
+    def next(self):
+        \"\"\"Define the trading logic for each bar.\"\"\"
+        if not self.position:  # Not in the market
+            if self.crossover > 0:  # Price crosses above SMA
+                self.buy(size=self.params.stake)
+        else:  # In the market
+            if self.crossover < 0:  # Price crosses below SMA
+                self.sell(size=self.params.stake)
+    
+    def notify_order(self, order):
+        \"\"\"Handle order notifications.\"\"\"
+        if order.status in [order.Submitted, order.Accepted]:
+            return
+        
+        if order.status in [order.Completed]:
+            if order.isbuy():
+                print(f'BUY EXECUTED, Price: {order.executed.price:.2f}')
+            else:
+                print(f'SELL EXECUTED, Price: {order.executed.price:.2f}')
+    
+    def notify_trade(self, trade):
+        \"\"\"Handle trade notifications.\"\"\"
+        if not trade.isclosed:
+            return
+        
+        print(f'TRADE PROFIT, GROSS: {trade.pnl:.2f}, NET: {trade.pnlcomm:.2f}')
+`;
+    
+    // Create download
+    const blob = new Blob([template], { type: 'text/plain' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'strategy_template.py';
+    a.click();
+    window.URL.revokeObjectURL(url);
+}
+
+function downloadExample(strategyType) {
+    // This would typically fetch example strategies from the server
+    alert(`Downloading ${strategyType} example strategy...`);
+}
+</script>
+{% endblock %}

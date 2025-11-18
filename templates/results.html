@@ -1,0 +1,375 @@
+{% extends "base.html" %}
+
+{% block title %}Results - Backtest System{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <h1 class="mb-4">
+            <i class="fas fa-chart-bar me-2"></i>Backtest Results
+        </h1>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="card-title mb-0">
+                    <i class="fas fa-history me-2"></i>Recent Results
+                </h5>
+                <div>
+                    <button type="button" class="btn btn-outline-secondary btn-sm me-2" onclick="refreshResults()">
+                        <i class="fas fa-sync-alt"></i> Refresh
+                    </button>
+                    <button type="button" class="btn btn-outline-danger btn-sm" onclick="clearResults()">
+                        <i class="fas fa-trash"></i> Clear All
+                    </button>
+                </div>
+            </div>
+            <div class="card-body">
+                <div id="results-container">
+                    <div class="text-center py-5">
+                        <i class="fas fa-chart-line fa-3x text-muted mb-3"></i>
+                        <h5 class="text-muted">No Results Available</h5>
+                        <p class="text-muted">Run a backtest to see results here!</p>
+                        <a href="{{ url_for('main.backtest_page') }}" class="btn btn-primary">
+                            <i class="fas fa-play me-2"></i>Run Backtest
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Result Detail Modal -->
+<div class="modal fade" id="detail-modal" tabindex="-1">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="detail-modal-title">
+                    <i class="fas fa-chart-bar me-2"></i>Detailed Results
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="detail-content">
+                    <!-- Detailed results will be loaded here -->
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let allResults = [];
+
+// Load results on page load
+document.addEventListener('DOMContentLoaded', function() {
+    loadResults();
+});
+
+function loadResults() {
+    // In a real application, this would fetch from the backend
+    // For now, we'll check localStorage for any saved results
+    const savedResults = localStorage.getItem('backtestResults');
+    
+    if (savedResults) {
+        allResults = JSON.parse(savedResults);
+        displayResults();
+    }
+}
+
+function displayResults() {
+    const container = document.getElementById('results-container');
+    
+    if (allResults.length === 0) {
+        container.innerHTML = `
+            <div class="text-center py-5">
+                <i class="fas fa-chart-line fa-3x text-muted mb-3"></i>
+                <h5 class="text-muted">No Results Available</h5>
+                <p class="text-muted">Run a backtest to see results here!</p>
+                <a href="/backtest" class="btn btn-primary">
+                    <i class="fas fa-play me-2"></i>Run Backtest
+                </a>
+            </div>
+        `;
+        return;
+    }
+    
+    let html = '';
+    
+    allResults.forEach((result, index) => {
+        const returnClass = result.total_return >= 0 ? 'text-success' : 'text-danger';
+        const returnIcon = result.total_return >= 0 ? 'fa-arrow-up' : 'fa-arrow-down';
+        
+        html += `
+            <div class="result-card card mb-3">
+                <div class="card-body">
+                    <div class="row align-items-center">
+                        <div class="col-md-3">
+                            <h6 class="mb-1">${result.strategy_name}</h6>
+                            <small class="text-muted">${result.start_date} to ${result.end_date}</small>
+                        </div>
+                        <div class="col-md-2">
+                            <div class="text-center">
+                                <div class="${returnClass}">
+                                    <i class="fas ${returnIcon} me-1"></i>
+                                    ${result.total_return.toFixed(2)}%
+                                </div>
+                                <small class="text-muted">Total Return</small>
+                            </div>
+                        </div>
+                        <div class="col-md-2">
+                            <div class="text-center">
+                                <div>${result.sharpe_ratio.toFixed(3)}</div>
+                                <small class="text-muted">Sharpe Ratio</small>
+                            </div>
+                        </div>
+                        <div class="col-md-2">
+                            <div class="text-center">
+                                <div class="text-danger">${result.max_drawdown.toFixed(2)}%</div>
+                                <small class="text-muted">Max Drawdown</small>
+                            </div>
+                        </div>
+                        <div class="col-md-1">
+                            <div class="text-center">
+                                <div>${result.num_trades}</div>
+                                <small class="text-muted">Trades</small>
+                            </div>
+                        </div>
+                        <div class="col-md-2">
+                            <div class="btn-group w-100">
+                                <button type="button" class="btn btn-sm btn-outline-primary" 
+                                        onclick="viewDetailedResult(${index})">
+                                    <i class="fas fa-eye"></i>
+                                </button>
+                                <button type="button" class="btn btn-sm btn-outline-success" 
+                                        onclick="downloadResult(${index})">
+                                    <i class="fas fa-download"></i>
+                                </button>
+                                <button type="button" class="btn btn-sm btn-outline-danger" 
+                                        onclick="deleteResult(${index})">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+    });
+    
+    container.innerHTML = html;
+}
+
+function viewDetailedResult(index) {
+    const result = allResults[index];
+    const modal = new bootstrap.Modal(document.getElementById('detail-modal'));
+    const modalTitle = document.getElementById('detail-modal-title');
+    const detailContent = document.getElementById('detail-content');
+    
+    modalTitle.innerHTML = `<i class="fas fa-chart-bar me-2"></i>${result.strategy_name} - Detailed Results`;
+    
+    let html = `
+        <!-- Tab Navigation -->
+        <ul class="nav nav-tabs mb-4" id="detail-tabs" role="tablist">
+            <li class="nav-item" role="presentation">
+                <button class="nav-link active" id="overview-tab" data-bs-toggle="tab" data-bs-target="#overview" type="button" role="tab">
+                    <i class="fas fa-chart-bar me-1"></i>Overview
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="trades-tab" data-bs-toggle="tab" data-bs-target="#trades" type="button" role="tab">
+                    <i class="fas fa-list me-1"></i>Trade History
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="chart-tab" data-bs-toggle="tab" data-bs-target="#chart" type="button" role="tab">
+                    <i class="fas fa-chart-line me-1"></i>Charts
+                </button>
+            </li>
+        </ul>
+
+        <!-- Tab Content -->
+        <div class="tab-content" id="detail-tab-content">
+            <!-- Overview Tab -->
+            <div class="tab-pane fade show active" id="overview" role="tabpanel" aria-labelledby="overview-tab">
+                <div class="row mb-4">
+                    <div class="col-md-12">
+                        <h5>Performance Summary</h5>
+                        <div class="row">
+                            <div class="col-md-3">
+                                <div class="card text-center">
+                                    <div class="card-body">
+                                        <h5 class="${result.total_return >= 0 ? 'text-success' : 'text-danger'}">
+                                            ${result.total_return.toFixed(2)}%
+                                        </h5>
+                                        <small class="text-muted">Total Return</small>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="card text-center">
+                                    <div class="card-body">
+                                        <h5>${result.sharpe_ratio.toFixed(3)}</h5>
+                                        <small class="text-muted">Sharpe Ratio</small>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="card text-center">
+                                    <div class="card-body">
+                                        <h5 class="text-danger">${result.max_drawdown.toFixed(2)}%</h5>
+                                        <small class="text-muted">Max Drawdown</small>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="card text-center">
+                                    <div class="card-body">
+                                        <h5>$${result.final_value.toLocaleString()}</h5>
+                                        <small class="text-muted">Final Value</small>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="row mb-4">
+                    <div class="col-md-6">
+                        <h6>Trading Statistics</h6>
+                        <table class="table table-sm">
+                            <tr><td>Number of Trades</td><td>${result.num_trades}</td></tr>
+                            <tr><td>Win Rate</td><td>${result.win_rate.toFixed(1)}%</td></tr>
+                            <tr><td>Profit Factor</td><td>${typeof result.profit_factor === 'number' ? result.profit_factor.toFixed(2) : parseFloat(result.profit_factor).toFixed(2)}</td></tr>
+                            <tr><td>Initial Cash</td><td>$${result.initial_cash.toLocaleString()}</td></tr>
+                        </table>
+                    </div>
+                    <div class="col-md-6">
+                        <h6>Period Information</h6>
+                        <table class="table table-sm">
+                            <tr><td>Start Date</td><td>${result.start_date}</td></tr>
+                            <tr><td>End Date</td><td>${result.end_date}</td></tr>
+                            <tr><td>Strategy</td><td>${result.strategy_name}</td></tr>
+                            <tr><td>Created</td><td>${new Date(result.created_at).toLocaleString()}</td></tr>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Trade History Tab -->
+            <div class="tab-pane fade" id="trades" role="tabpanel" aria-labelledby="trades-tab">
+                <div id="trade-history-container">
+                    <!-- Trade history will be loaded here -->
+                </div>
+            </div>
+
+            <!-- Charts Tab -->
+            <div class="tab-pane fade" id="chart" role="tabpanel" aria-labelledby="chart-tab">
+                <div id="detail-equity-chart" style="height: 400px;">
+                    <!-- Equity curve chart will be loaded here -->
+                </div>
+            </div>
+        </div>
+    `;
+    
+    detailContent.innerHTML = html;
+    
+    // Add event listeners for tab switching
+    document.addEventListener('shown.bs.tab', function (event) {
+        if (event.target.id === 'trades-tab') {
+            // Load trade history when trades tab is shown
+            createTradeHistoryTable('trade-history-container', result.trades || [], result.strategy_name);
+        } else if (event.target.id === 'chart-tab') {
+            // Load equity curve chart when chart tab is shown
+            loadEquityCurveChart();
+        }
+    });
+    
+    function loadEquityCurveChart() {
+        if (result.equity_curve && result.equity_curve.length > 0) {
+            const dates = result.equity_curve.map(point => point.date);
+            const values = result.equity_curve.map(point => point.value);
+            
+            const trace = {
+                x: dates,
+                y: values,
+                type: 'scatter',
+                mode: 'lines',
+                name: result.strategy_name,
+                line: { width: 2, color: '#007bff' }
+            };
+            
+            const layout = {
+                title: 'Portfolio Value Over Time',
+                xaxis: { title: 'Date' },
+                yaxis: { 
+                    title: 'Total Capital ($)',
+                    tickformat: ',.0f'
+                },
+                showlegend: false,
+                margin: { t: 40, r: 40, b: 40, l: 60 }
+            };
+            
+            Plotly.newPlot('detail-equity-chart', [trace], layout, {responsive: true});
+        } else {
+            document.getElementById('detail-equity-chart').innerHTML = `
+                <div class="text-center py-5">
+                    <i class="fas fa-chart-line fa-3x text-muted mb-3"></i>
+                    <h6 class="text-muted">No Chart Data Available</h6>
+                    <p class="text-muted small">Equity curve data was not collected for this backtest.</p>
+                </div>
+            `;
+        }
+    }
+    
+    modal.show();
+}
+
+function downloadResult(index) {
+    const result = allResults[index];
+    const dataStr = JSON.stringify(result, null, 2);
+    const dataBlob = new Blob([dataStr], {type: 'application/json'});
+    
+    const url = URL.createObjectURL(dataBlob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${result.strategy_name}_${result.start_date}_${result.end_date}.json`;
+    link.click();
+    
+    URL.revokeObjectURL(url);
+}
+
+function deleteResult(index) {
+    if (confirm('Are you sure you want to delete this result?')) {
+        allResults.splice(index, 1);
+        localStorage.setItem('backtestResults', JSON.stringify(allResults));
+        displayResults();
+    }
+}
+
+function refreshResults() {
+    loadResults();
+}
+
+function clearResults() {
+    if (confirm('Are you sure you want to clear all results? This cannot be undone.')) {
+        allResults = [];
+        localStorage.removeItem('backtestResults');
+        displayResults();
+    }
+}
+
+// Listen for new results from other pages
+window.addEventListener('storage', function(e) {
+    if (e.key === 'backtestResults') {
+        loadResults();
+    }
+});
+</script>
+{% endblock %}

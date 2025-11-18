@@ -1,0 +1,7 @@
+{
+  "symbols": [
+    "AAPL", "GOOGL", "MSFT", "TSLA", "AMZN", "NVDA", "META", "SPY", "QQQ",
+    "BTC-USD", "ETH-USD", "LTC-USD", "ADA-USD", "DOT-USD", "LINK-USD", "XRP-USD",
+    "MATIC-USD", "AVAX-USD", "SOL-USD", "BNB-USD"
+  ]
+}
